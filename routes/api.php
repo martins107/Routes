@@ -21,6 +21,7 @@ Route::prefix('nodes')->group(function(){
     Route::put('/create',[NodeController::class,'create']);
     Route::delete('/delete/{id}',[NodeController::class,'delete']);
     Route::get('/list',[NodeController::class,'list']);
+    Route::post('/findRoute', [NodeController::class,'findRoute']);
 });
 Route::prefix('connections')->group(function(){
     Route::post('/update',[ConnectionController::class,'update']);
