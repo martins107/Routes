@@ -61,6 +61,8 @@ class NodeController extends Controller
                 $node = Node::find($id);
                 if($node){
                     try{
+                        $node->origins()->delete();
+                        $node->destinations()->delete();
                         $node->delete();
                         return ResponseGenerator::generateResponse(200, '', 'Nodo borrado correctamente');
                     }catch(\Exception $e){
@@ -93,91 +95,179 @@ class NodeController extends Controller
             return ResponseGenerator::generateResponse(400, $validator->errors()->all(), 'Fallos: ');
         }else{
 
-            $origin = Node::find($datos->origin);
-            $destination = Node::find($datos->destination);
+            if($datos->origin == $datos->destination){
+                return ResponseGenerator::generateResponse(400, 'The origin can not be destination', 'Something was wrong');
+            }else{
+                //$origin = Node::find($datos->origin);
+                //$destination = Node::find($datos->destination);
+                $allRoutes = Node::with('origins','destinations')->get();
 
-            $this->getRoute($origin, $destination);
+                //array_unshift($allRoutes,"");
+                //unset($allRoutes[0]);
+
+                //echo($allRoutes);
+                //die();
+
+                print_r($this->getRoute($datos->origin, $datos->destination, $allRoutes, 0));
+            }
 
         }
     }
-    public function getRoute($actualNode, $destNode, $actualRoute = [[],0], $time = 0){
+    public function getRoute($actualNode, $destNode, $allRoutes, $time, $actualRoute = [[],0]){
 
-        //Creamos el booleano de si se ha encontrado la ruta más rápida
+       //Creamos el booleano de si se ha encontrado la ruta más rápida
         $finalRoute = false;
 
-        //Añadimos el nombre del nodo actual al array de rutas.
+        $actualArrayNode = $actualNode-1;
+        $destArrayNode = $destNode-1;
 
-        $actualRoute[] = [[$actualNode->name],$time];
+       //Añadimos el nombre del nodo actual al array de rutas.
+        //echo($allRoutes[$actualArrayNode]->name);
+        //echo($allRoutes[$actualArrayNode]->name.'-');
+        echo($actualArrayNode);
+        //die();
 
-        if($actualNode->id != $destNode->id) {
+
+        $actualRoute[] = [[$allRoutes[$actualArrayNode]->name],$time];
+
+
+
+        if($allRoutes[$actualArrayNode]->name != $allRoutes[$destArrayNode]->name) {
             //Si el nodo actual, es distinto al nodo destino, continuamos buscando rutas
-            foreach ($actualNode->origins as $route){
-                //Recorremos todas las conexiones que tienen como origen el nodo actual.
-                if($route->unidirectional == 1 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
-                    //Comprobamos si la ruta es unidireccional y si no esta metida en el array de la ruta actual. Si no esta metida llamamos a la función recursiva.
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    //Calculamos el tiempo y agregamos el nombre de esta ruta al array.
 
-                    $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
-                    //Llamamos a la función recursiva con los datos actualizados.
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
-                        //
-                    }
-                }
-                if($route->unidirectional == 0 && !(in_array(Node::find($route->origin)->name, $actualRoute))){
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    $result = $this->getRoute(Node::find($route->origin), $destNode, $actualRoute, $time);
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
-                    }
-                }
-                if($route->unidirectional == 0 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
-                    }
-                }
-            }
-            foreach ($actualNode->destinations as $route){
+            $posiblePaths = $allRoutes[$actualArrayNode]->origins->merge($allRoutes[$actualArrayNode]->destinations);
 
-                if($route->unidirectional == 1 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
+            if(isset($posiblePaths)){
+
+                foreach($posiblePaths as $path){
+                    //echo($path->name);
+                    if(isset($path)){
+                        if(!(in_array($path->name, $actualRoute)) && $path->unidirectional == 0){
+
+                            $time += ($path->distance / $path->speed);
+
+                            $actualRoute[] = [[$path->name],$time];
+                            //Calculamos el tiempo y agregamos el nombre de esta ruta al array.
+                            //echo($path->name);
+                            $result = $this->getRoute($path->destination, $destNode, $actualRoute, $time);
+                            if (($result['ruta'] && !$finalRoute) || ($result['ruta'] && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                        if($path->unidirectional == 1){
+
+                            if(in_array($allRoutes[$path->destination-1]->name, $actualRoute)){
+
+                                $time += ($path->distance / $path->speed);
+
+                                $actualRoute[] = [[$allRoutes[$path->destination-1]->name],$time];
+                                //Calculamos el tiempo y agregamos el nombre de esta ruta al array.
+
+                                $result = $this->getRoute($allRoutes[$path->destination-1],
+                                                        $destNode-1, $actualRoute, $time);
+                                if (($result['ruta'] && !$finalRoute) || ($result['ruta'] && $result['tiempo'] < $actualRoute[1])) {
+                                    $finalRoute = $result;
+                                }
+                            }
+                            if(in_array($allRoutes[$path->origin-1]->name, $actualRoute)){
+                                $time += ($path->distance / $path->speed);
+
+                                $actualRoute[] = [[$allRoutes[$path->origin-1]->name],$time];
+                                //Calculamos el tiempo y agregamos el nombre de esta ruta al array.
+
+                                $result = $this->getRoute($allRoutes[$path->origin-1],
+                                                        $destNode-1, $actualRoute, $time);
+                                if (($result['ruta'] && !$finalRoute) || ($result['ruta'] && $result['tiempo'] < $actualRoute[1])) {
+                                    $finalRoute = $result;
+                                }
+                            }
+                        }
                     }
                 }
-                if($route->unidirectional == 0 && !(in_array(Node::find($route->origin)->name, $actualRoute))){
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    $result = $this->getRoute(Node::find($route->origin), $destNode, $actualRoute, $time);
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
-                    }
-                }
-                if($route->unidirectional == 0 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
-                    $time += ($route->distance / $route->speed);
-                    $actualRoute[] = [[$route->name],$time];
-                    $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
-                    if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
-                        $finalRoute = $result;
-                    }
-                }
+            }else{
+                $finalRoute = $actualRoute;
             }
+        }else{
+            $finalRoute = $actualRoute;
         }
-        else{
-            //Si el nodo actual es el mismo que el de destino, igualamos esa ruta a la final.
-           $finalRoute = $actualRoute;
-        }
-        Log::info(['ruta' => $finalRoute, 'tiempo' => $time]);
-        //Retornamos la ruta final y el tiempo que ha tardado.
-        return ['ruta' => $finalRoute, 'tiempo' => $time];
+    return ['ruta' => $finalRoute, 'tiempo' => $time];
 
     }
 }
+/*
+                //Creamos el booleano de si se ha encontrado la ruta más rápida
+                $finalRoute = false;
+
+                //Añadimos el nombre del nodo actual al array de rutas.
+
+                $actualRoute[] = [[$actualNode->name],$time];
+
+                if($actualNode->id != $destNode->id) {
+                    //Si el nodo actual, es distinto al nodo destino, continuamos buscando rutas
+                    foreach ($actualNode->origins as $route){
+                        //Recorremos todas las conexiones que tienen como origen el nodo actual.
+                        if($route->unidirectional == 1 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
+                            //Comprobamos si la ruta es unidireccional y si no esta metida en el array de la ruta actual. Si no esta metida llamamos a la función recursiva.
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            //Calculamos el tiempo y agregamos el nombre de esta ruta al array.
+
+                            $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
+                            //Llamamos a la función recursiva con los datos actualizados.
+                            if (($result['ruta'] && !$finalRoute) || ($result['ruta'] && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                                //
+                            }
+                        }
+                        if($route->unidirectional == 0 && !(in_array(Node::find($route->origin)->name, $actualRoute))){
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            $result = $this->getRoute(Node::find($route->origin), $destNode, $actualRoute, $time);
+                            if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                        if($route->unidirectional == 0 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
+                            if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                    }
+                    foreach ($actualNode->destinations as $route){
+
+                        if($route->unidirectional == 1 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
+                            if (($result['ruta'] && !$finalRoute) || ($result['ruta'] && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                        if($route->unidirectional == 0 && !(in_array(Node::find($route->origin)->name, $actualRoute))){
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            $result = $this->getRoute(Node::find($route->origin), $destNode, $actualRoute, $time);
+                            if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                        if($route->unidirectional == 0 && !(in_array(Node::find($route->destination)->name, $actualRoute))){
+                            $time += ($route->distance / $route->speed);
+                            $actualRoute[] = [[$route->name],$time];
+                            $result = $this->getRoute(Node::find($route->destination), $destNode, $actualRoute, $time);
+                            if (($result && !$finalRoute) || ($result && $result['tiempo'] < $actualRoute[1])) {
+                                $finalRoute = $result;
+                            }
+                        }
+                    }
+                }
+                else{
+                    //Si el nodo actual es el mismo que el de destino, igualamos esa ruta a la final.
+                $finalRoute = $actualRoute;
+                }
+
+                //Retornamos la ruta final y el tiempo que ha tardado.
+                return ['ruta' => $finalRoute, 'tiempo' => $time];*/
